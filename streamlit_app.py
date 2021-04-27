@@ -1,4 +1,5 @@
-from pyvis.network import Network
+import networkx as nx
+import plotly.graph_objects as go
 import pandas as pd
 import streamlit as st
 import base64
@@ -70,6 +71,79 @@ def get_table_download_link(df: pd.DataFrame, node: str):
     return href
 
 
+def make_edge_traces(G: nx.Graph):
+    """
+    Makes edge traces for plotting a network. Must make a separate trace for each edge
+    in order to vary width by PPMI. Also makes a transparent node trace for the edge's
+    midpoint in order to add hover actions to the edges.
+    in: networkx Graph of filtered data
+    out: list of edge traces, midpoint trace
+    """
+    edge_traces = []
+    edge_midpoint_x = []
+    edge_midpoint_y = []
+    edge_midpoint_text = []
+
+    for edge in G.edges():
+        x0, y0 = G.nodes[edge[0]]["pos"]
+        x1, y1 = G.nodes[edge[1]]["pos"]
+        ppmi = G.edges[edge]["ppmi"]
+        edge_count = G.edges[edge]["edge_count"]
+        trace = go.Scatter(
+            x=[x0, x1, None],
+            y=[y0, y1, None],
+            line=dict(width=ppmi / 2, color="gray"),
+            mode="lines",
+        )
+        edge_traces.append(trace)
+
+        edge_midpoint_x.append((x0 + x1) / 2)
+        edge_midpoint_y.append((y0 + y1) / 2)
+        edge_midpoint_text.append(
+            f"# connections = {edge_count}<br>ppmi = {round(ppmi, 2)}"
+        )
+
+    edge_midpoint_trace = go.Scatter(
+        x=edge_midpoint_x,
+        y=edge_midpoint_y,
+        mode="markers",
+        text=edge_midpoint_text,
+        hoverinfo="text",
+        marker=dict(color="grey", opacity=0, size=50),
+    )
+    return edge_traces, edge_midpoint_trace
+
+
+def make_node_trace(G: nx.Graph):
+    node_x = []
+    node_y = []
+    node_color = []
+    node_size = []
+    node_text = []
+
+    for node in G.nodes():
+        x, y = G.nodes[node]["pos"]
+        node_x.append(x)
+        node_y.append(y)
+        if G.nodes[node]["label"] == "EFFECT":
+            node_color.append("coral")
+        elif G.nodes[node]["remedy_type"] == "Remedy":
+            node_color.append("cornflowerblue")
+        else:
+            node_color.append("lightgreen")
+        node_size.append(G.nodes[node]["count_log"] * 5)
+        node_text.append(f"{node}<br>count = {G.nodes[node]['count']}")
+
+    return go.Scatter(
+        x=node_x,
+        y=node_y,
+        mode="markers",
+        text=node_text,
+        hoverinfo="text",
+        marker=dict(color=node_color, size=node_size, line_width=2, opacity=1),
+    )
+
+
 if __name__ == "__main__":
     st.set_page_config(layout="wide")
     st.title("Withdrawal Remedy Explorer")
@@ -124,66 +198,45 @@ if __name__ == "__main__":
         )
 
     with col2:
-        net = Network(height="750px", width="100%", bgcolor="white", font_color="black")
-        net.barnes_hut()  # layout solver
-        for index, row in filtered_nodes.iterrows():
-            if row["label"] == "EFFECT":
-                net.add_node(
-                    n_id=row["id"],
-                    label=row["id"],
-                    shape="square",
-                    size=row["count_log"],
-                    color="rgb(255, 193, 112)",
-                )
-            elif row["remedy_type"] == "Remedy":
-                net.add_node(
-                    n_id=row["id"],
-                    label=row["id"],
-                    shape="diamond",
-                    size=row["count_log"],
-                    color="rgb(146, 224, 167)",
-                )
-            elif row["remedy_type"] == "Possible Remedy":
-                net.add_node(
-                    n_id=row["id"],
-                    label=row["id"],
-                    shape="diamond",
-                    size=row["count_log"],
-                    color="rgb(146, 177, 224)",
-                )
-        for index, row in filtered_edges.iterrows():
-            net.add_edge(row["from"], row["to"], value=row["ppmi"])
-        net.set_options(
-            """
-            var options = {
-            "nodes": {
-                "color": {
-                "highlight": {
-                    "border": "rgba(132,45,233,1)",
-                    "background": "rgba(221,213,255,1)"
-                },
-                "hover": {
-                    "border": "rgba(233,125,26,1)",
-                    "background": "rgba(255,229,223,1)"
-                }
-                },
-                "font": {
-                "size": 14
-                }
-            },
-            "edges": {
-                "color": {
-                "inherit": true
-                },
-                "scaling": {
-                "max": 10
-                },
-                "smooth": false
-            }
-            }
-        """
+        G = nx.from_pandas_edgelist(
+            filtered_edges,
+            source="from",
+            target="to",
+            edge_attr=True,
         )
-        net.show("net.html")
-        with open("net.html") as html_file:
-            html = html_file.read()
-        st.components.v1.html(html, width=1000, height=700)
+
+        # Set each column we'll use from nodes df as a node attribute
+        for col in ["block_level_0", "count", "label", "remedy_type", "count_log"]:
+            nx.set_node_attributes(
+                G,
+                pd.Series(
+                    filtered_nodes[col].values, index=filtered_nodes["id"]
+                ).to_dict(),
+                name=col,
+            )
+
+        # Lay out the network and add node position as a node attribute
+        pos = nx.drawing.layout.spring_layout(G)
+        nx.set_node_attributes(G, pos, name="pos")
+
+        # Make traces for plotting
+        edge_traces, edge_midpoint_trace = make_edge_traces(G)
+        node_trace = make_node_trace(G)
+
+        # Make the plotly figure
+        fig = go.Figure(
+            layout=go.Layout(
+                height=720,
+                showlegend=False,
+                hovermode="closest",
+                margin=dict(b=20, l=20, r=20, t=20),
+                xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            )
+        )
+        for trace in edge_traces:
+            fig.add_trace(trace)
+        fig.add_trace(node_trace)
+        fig.add_trace(edge_midpoint_trace)
+
+        st.plotly_chart(fig, use_container_width=True)
