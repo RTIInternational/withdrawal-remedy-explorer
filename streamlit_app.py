@@ -1,8 +1,21 @@
 import networkx as nx
 import plotly.graph_objects as go
 import pandas as pd
+import numpy as np
 import streamlit as st
 import base64
+
+from enum import IntEnum, unique
+
+
+@unique
+class NodeType(IntEnum):
+    Effect = 0
+    Remedy = 1
+    Possible_Remedy = 2
+
+    def __str__(self):
+        return self.name.replace("_", " ")
 
 
 @st.cache
@@ -94,6 +107,7 @@ def make_edge_traces(G: nx.Graph):
             y=[y0, y1, None],
             line=dict(width=ppmi / 2, color="gray"),
             mode="lines",
+            showlegend=False,
         )
         edge_traces.append(trace)
 
@@ -109,38 +123,56 @@ def make_edge_traces(G: nx.Graph):
         mode="markers",
         text=edge_midpoint_text,
         hoverinfo="text",
-        marker=dict(color="grey", opacity=0, size=50),
+        marker=dict(color="lightgrey", opacity=0, size=50),
+        showlegend=False,
     )
     return edge_traces, edge_midpoint_trace
 
 
-def make_node_trace(G: nx.Graph):
+def make_node_trace(G: nx.Graph, node_type: NodeType, color: str):
     node_x = []
     node_y = []
-    node_color = []
     node_size = []
-    node_text = []
+    node_name = []
+    hover_info = []
 
-    for node in G.nodes():
+    def add_node(node):
         x, y = G.nodes[node]["pos"]
         node_x.append(x)
         node_y.append(y)
-        if G.nodes[node]["label"] == "EFFECT":
-            node_color.append("coral")
-        elif G.nodes[node]["remedy_type"] == "Remedy":
-            node_color.append("cornflowerblue")
-        else:
-            node_color.append("lightgreen")
         node_size.append(G.nodes[node]["count_log"] * 5)
-        node_text.append(f"{node}<br>count = {G.nodes[node]['count']}")
+        node_name.append(node)
+        hover_info.append(f"{node}<br>count = {G.nodes[node]['count']}")
 
+    if node_type == NodeType.Effect:
+        for node in G.nodes():
+            if G.nodes[node]["label"] == "EFFECT":
+                add_node(node)
+            else:
+                pass
+    elif node_type == NodeType.Remedy:
+        for node in G.nodes():
+            if G.nodes[node]["remedy_type"] == "Remedy":
+                add_node(node)
+            else:
+                pass
+    elif node_type == NodeType.Possible_Remedy:
+        for node in G.nodes():
+            if G.nodes[node]["remedy_type"] == "Possible Remedy":
+                add_node(node)
+            else:
+                pass
     return go.Scatter(
         x=node_x,
         y=node_y,
-        mode="markers",
-        text=node_text,
-        hoverinfo="text",
-        marker=dict(color=node_color, size=node_size, line_width=2, opacity=1),
+        mode="markers+text",
+        text=node_name,
+        customdata=hover_info,
+        hovertemplate="%{customdata}",
+        # hoverinfo=hover_info,
+        marker=dict(color=color, size=node_size, line_width=2, opacity=1),
+        name=str(node_type),
+        textposition="bottom center",
     )
 
 
@@ -221,13 +253,19 @@ if __name__ == "__main__":
 
         # Make traces for plotting
         edge_traces, edge_midpoint_trace = make_edge_traces(G)
-        node_trace = make_node_trace(G)
+        effect_trace = make_node_trace(G=G, node_type=NodeType.Effect, color="coral")
+        remedy_trace = make_node_trace(
+            G=G, node_type=NodeType.Remedy, color="cornflowerblue"
+        )
+        possible_remedy_trace = make_node_trace(
+            G=G, node_type=NodeType.Possible_Remedy, color="lightgreen"
+        )
 
         # Make the plotly figure
         fig = go.Figure(
             layout=go.Layout(
                 height=720,
-                showlegend=False,
+                showlegend=True,
                 hovermode="closest",
                 margin=dict(b=20, l=20, r=20, t=20),
                 xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
@@ -236,7 +274,11 @@ if __name__ == "__main__":
         )
         for trace in edge_traces:
             fig.add_trace(trace)
-        fig.add_trace(node_trace)
+        for trace in [effect_trace, remedy_trace, possible_remedy_trace]:
+            if trace is not None:
+                fig.add_trace(trace)
+            else:
+                pass
         fig.add_trace(edge_midpoint_trace)
 
         st.plotly_chart(fig, use_container_width=True)
