@@ -7,6 +7,7 @@ import streamlit as st
 import base64
 
 from enum import IntEnum, unique
+from random import choice
 
 
 @unique
@@ -31,6 +32,18 @@ def load_data():
     nodes = source_nodes.append(target_nodes).drop_duplicates()
 
     return substance_categories, effect_categories, nodes, remedy_edges
+
+
+@st.cache
+def assign_colors(nodes: pd.DataFrame):
+    colors = px.colors.qualitative.Light24
+    categories = nodes["category"].unique()
+    color_assignments = {}
+
+    for category in categories:
+        color_assignments[category] = choice(colors)
+
+    return color_assignments
 
 
 def filter_on_category(
@@ -95,6 +108,33 @@ def get_table_download_link(df: pd.DataFrame, node: str):
     return href
 
 
+def make_grouped_layout(G: nx.Graph, filter_node: str):
+    # start from a circular layout
+    pos = nx.spring_layout(G)
+
+    # prep center points (along circle perimeter) for the clusters
+    node_categories = list(set(nx.get_node_attributes(G, "category").values()))
+    angles = np.linspace(0, 2 * np.pi, 1 + len(node_categories))
+    reposition = {}
+    radius = 3
+    for category, angle in zip(node_categories, angles):
+        if angle > 0:
+            reposition[category] = np.array(
+                [radius * np.cos(angle), radius * np.sin(angle)]
+            )
+        else:
+            reposition[category] = np.array([0, 0])
+
+    # adjust each point to be relative to its category's center point
+    for node in pos.keys():
+        if G.nodes[node]["id"] == filter_node:
+            pass
+        category = G.nodes[node]["category"]
+        pos[node] += reposition[category]
+
+    return pos
+
+
 def make_edge_traces(G: nx.Graph):
     """
     Makes edge traces for plotting a network. Must make a separate trace for each edge
@@ -112,11 +152,12 @@ def make_edge_traces(G: nx.Graph):
         x0, y0 = G.nodes[edge[0]]["pos"]
         x1, y1 = G.nodes[edge[1]]["pos"]
         ppmi = G.edges[edge]["ppmi"]
+        width = max(ppmi, 0.25)
         edge_count = G.edges[edge]["edge_count"]
         trace = go.Scatter(
             x=[x0, x1, None],
             y=[y0, y1, None],
-            line=dict(width=ppmi / 2, color="gray"),
+            line=dict(width=width, color="gray"),
             mode="lines",
             showlegend=False,
         )
@@ -142,9 +183,7 @@ def make_edge_traces(G: nx.Graph):
 
 def make_node_traces(G: nx.Graph):
     node_traces = []
-    colors = px.colors.qualitative.Plotly
     node_categories = list(set(nx.get_node_attributes(G, "category").values()))
-    print(node_categories)
 
     def add_trace(node, category):
         x, y = G.nodes[node]["pos"]
@@ -156,9 +195,7 @@ def make_node_traces(G: nx.Graph):
             f"{node}<br>count = {G.nodes[node]['count']}<br>category = {category}"
         )
 
-    for index, category in enumerate(node_categories):
-        if index > len(colors):
-            raise ValueError("Too many categories for the Plotly color sequence")
+    for category in node_categories:
 
         node_x = []
         node_y = []
@@ -179,7 +216,12 @@ def make_node_traces(G: nx.Graph):
             text=node_name,
             customdata=hover_info,
             hovertemplate="%{customdata}",
-            marker=dict(color=colors[index], size=node_size, line_width=2, opacity=1),
+            marker=dict(
+                color=color_assignments[category],
+                size=node_size,
+                line_width=2,
+                opacity=1,
+            ),
             name=str(category),
             textposition="bottom center",
         )
@@ -194,6 +236,7 @@ if __name__ == "__main__":
     col1, col2 = st.beta_columns([2, 3])
 
     substance_categories, effect_categories, nodes, edges = load_data()
+    color_assignments = assign_colors(nodes)
 
     with col1:
         filter_type = st.radio(
@@ -257,7 +300,7 @@ if __name__ == "__main__":
         )
 
         # Set each column we'll use from nodes df as a node attribute
-        for col in ["category", "count", "label", "count_log"]:
+        for col in ["id", "category", "count", "label", "count_log"]:
             nx.set_node_attributes(
                 G,
                 pd.Series(
@@ -267,7 +310,7 @@ if __name__ == "__main__":
             )
 
         # Lay out the network and add node position as a node attribute
-        pos = nx.drawing.layout.spring_layout(G)
+        pos = make_grouped_layout(G, filter_node)
         nx.set_node_attributes(G, pos, name="pos")
 
         # Make traces for plotting
