@@ -55,6 +55,8 @@ def load_data():
             "target_text",
             "edge_count",
             "ppmi",
+            "category_source",
+            "category_target",
         ]
     ]
     remedy_edges = remedy_edges.rename(

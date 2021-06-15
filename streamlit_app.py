@@ -30,6 +30,7 @@ def load_data():
     effect_categories = target_nodes.category.unique().tolist()
 
     nodes = source_nodes.append(target_nodes).drop_duplicates()
+    nodes.sort_values(by=["category"])
 
     return substance_categories, effect_categories, nodes, remedy_edges
 
@@ -109,14 +110,15 @@ def get_table_download_link(df: pd.DataFrame, node: str):
 
 
 def make_grouped_layout(G: nx.Graph, filter_node: str):
-    # start from a circular layout
+    # start from a base layout
     pos = nx.spring_layout(G)
+    print(pos)
 
     # prep center points (along circle perimeter) for the clusters
     node_categories = list(set(nx.get_node_attributes(G, "category").values()))
     angles = np.linspace(0, 2 * np.pi, 1 + len(node_categories))
     reposition = {}
-    radius = 3
+    radius = 2.5
     for category, angle in zip(node_categories, angles):
         if angle > 0:
             reposition[category] = np.array(
@@ -311,6 +313,7 @@ if __name__ == "__main__":
 
         # Lay out the network and add node position as a node attribute
         pos = make_grouped_layout(G, filter_node)
+        # pos = nx.drawing.layout.kamada_kawai_layout(G)
         nx.set_node_attributes(G, pos, name="pos")
 
         # Make traces for plotting
