@@ -109,10 +109,13 @@ def get_table_download_link(df: pd.DataFrame, node: str):
     return href
 
 
-def make_grouped_layout(G: nx.Graph, filter_node: str):
+def make_grouped_layout(G: nx.Graph, filtered_nodes: pd.DataFrame, filter_node: str):
     # start from a base layout
     pos = nx.spring_layout(G)
-    print(pos)
+    keys = list(pos.keys())
+    values = list(pos.values())
+
+    # reorder keys by category
 
     # prep center points (along circle perimeter) for the clusters
     node_categories = list(set(nx.get_node_attributes(G, "category").values()))
@@ -312,8 +315,8 @@ if __name__ == "__main__":
             )
 
         # Lay out the network and add node position as a node attribute
-        pos = make_grouped_layout(G, filter_node)
-        # pos = nx.drawing.layout.kamada_kawai_layout(G)
+        # pos = make_grouped_layout(G, filter_node)
+        pos = nx.drawing.layout.spring_layout(G)
         nx.set_node_attributes(G, pos, name="pos")
 
         # Make traces for plotting
