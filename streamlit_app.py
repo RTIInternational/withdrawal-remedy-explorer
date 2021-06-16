@@ -140,6 +140,25 @@ def make_grouped_layout(G: nx.Graph, filtered_nodes: pd.DataFrame, filter_node: 
     return pos
 
 
+def add_within_category_edges(nodes: pd.DataFrame, edges: pd.DataFrame):
+    # make edges among nodes of same category
+    self_join = nodes.merge(nodes, on="category")
+    self_join = self_join[self_join.id_x.ne(self_join.id_y)]
+    one_edge_per_category = self_join.groupby("id_x").first().reset_index()
+
+    # append them to actual edges after reshaping
+    within_category_edges = one_edge_per_category[["id_x", "id_y", "category"]]
+    within_category_edges.rename(
+        columns={"id_x": "from", "id_y": "to", "category": "category_source"},
+        inplace=True,
+    )
+    within_category_edges["category_target"] = within_category_edges["category_source"]
+    within_category_edges["edge_count"] = 1
+    within_category_edges["ppmi"] = 0.5
+
+    return edges.append(within_category_edges)
+
+
 def make_edge_traces(G: nx.Graph):
     """
     Makes edge traces for plotting a network. Must make a separate trace for each edge
@@ -154,25 +173,26 @@ def make_edge_traces(G: nx.Graph):
     edge_midpoint_text = []
 
     for edge in G.edges():
-        x0, y0 = G.nodes[edge[0]]["pos"]
-        x1, y1 = G.nodes[edge[1]]["pos"]
-        ppmi = G.edges[edge]["ppmi"]
-        width = max(ppmi, 0.25)
-        edge_count = G.edges[edge]["edge_count"]
-        trace = go.Scatter(
-            x=[x0, x1, None],
-            y=[y0, y1, None],
-            line=dict(width=width, color="gray"),
-            mode="lines",
-            showlegend=False,
-        )
-        edge_traces.append(trace)
+        if G.edges[edge]["category_source"] != G.edges[edge]["category_target"]:
+            x0, y0 = G.nodes[edge[0]]["pos"]
+            x1, y1 = G.nodes[edge[1]]["pos"]
+            ppmi = G.edges[edge]["ppmi"]
+            width = max(ppmi, 0.25)
+            edge_count = G.edges[edge]["edge_count"]
+            trace = go.Scatter(
+                x=[x0, x1, None],
+                y=[y0, y1, None],
+                line=dict(width=width, color="gray"),
+                mode="lines",
+                showlegend=False,
+            )
+            edge_traces.append(trace)
 
-        edge_midpoint_x.append((x0 + x1) / 2)
-        edge_midpoint_y.append((y0 + y1) / 2)
-        edge_midpoint_text.append(
-            f"# connections = {edge_count}<br>ppmi = {round(ppmi, 2)}"
-        )
+            edge_midpoint_x.append((x0 + x1) / 2)
+            edge_midpoint_y.append((y0 + y1) / 2)
+            edge_midpoint_text.append(
+                f"# connections = {edge_count}<br>ppmi = {round(ppmi, 2)}"
+            )
 
     edge_midpoint_trace = go.Scatter(
         x=edge_midpoint_x,
@@ -297,8 +317,9 @@ if __name__ == "__main__":
         )
 
     with col2:
+        combined_edgelist = add_within_category_edges(filtered_nodes, filtered_edges)
         G = nx.from_pandas_edgelist(
-            filtered_edges,
+            combined_edgelist,
             source="from",
             target="to",
             edge_attr=True,
