@@ -1,11 +1,13 @@
 import networkx as nx
 import plotly.graph_objects as go
+import plotly.express as px
 import pandas as pd
 import numpy as np
 import streamlit as st
 import base64
 
 from enum import IntEnum, unique
+from random import choice
 
 
 @unique
@@ -24,12 +26,35 @@ def load_data():
     source_nodes = pd.read_parquet("data/source_nodes.parquet")
     target_nodes = pd.read_parquet("data/target_nodes.parquet")
 
-    unique_remedies = source_nodes.id.unique().tolist()
-    unique_effects = target_nodes.id.unique().tolist()
+    substance_categories = source_nodes.category.unique().tolist()
+    effect_categories = target_nodes.category.unique().tolist()
 
     nodes = source_nodes.append(target_nodes).drop_duplicates()
+    nodes.sort_values(by=["category"])
 
-    return unique_remedies, unique_effects, nodes, remedy_edges
+    return substance_categories, effect_categories, nodes, remedy_edges
+
+
+@st.cache
+def assign_colors(nodes: pd.DataFrame):
+    colors = px.colors.qualitative.Light24
+    categories = nodes["category"].unique()
+    color_assignments = {}
+
+    for category in categories:
+        color_assignments[category] = choice(colors)
+
+    return color_assignments
+
+
+def filter_on_category(
+    category: str,
+    filter_type: str,
+    nodes: pd.DataFrame,
+):
+    return nodes[
+        nodes["label"].eq(filter_type.upper()) & nodes["category"].eq(category)
+    ].id.tolist()
 
 
 def filter_on_node(
@@ -38,7 +63,7 @@ def filter_on_node(
     nodes: pd.DataFrame,
     edges: pd.DataFrame,
 ):
-    if filter_type == "Remedy":
+    if filter_type == "Substance":
         filtered_edges = edges[edges["from"].eq(filter_node)]
         filtered_nodes = nodes[
             nodes["id"].eq(filter_node) | nodes["id"].isin(filtered_edges["to"])
@@ -49,7 +74,7 @@ def filter_on_node(
             nodes["id"].eq(filter_node) | nodes["id"].isin(filtered_edges["from"])
         ]
     else:
-        raise ValueError("Invalid filter type. Try 'Remedy' or 'Effect'.")
+        raise ValueError("Invalid filter type. Try 'Substance' or 'Effect'.")
     return filtered_nodes, filtered_edges
 
 
@@ -84,6 +109,25 @@ def get_table_download_link(df: pd.DataFrame, node: str):
     return href
 
 
+def add_within_category_edges(nodes: pd.DataFrame, edges: pd.DataFrame):
+    # make edges among nodes of same category
+    self_join = nodes.merge(nodes, on="category")
+    self_join = self_join[self_join.id_x.ne(self_join.id_y)]
+    one_edge_per_category = self_join.groupby("id_x").first().reset_index()
+
+    # append them to actual edges after reshaping
+    within_category_edges = one_edge_per_category[["id_x", "id_y", "category"]]
+    within_category_edges.rename(
+        columns={"id_x": "from", "id_y": "to", "category": "category_source"},
+        inplace=True,
+    )
+    within_category_edges["category_target"] = within_category_edges["category_source"]
+    within_category_edges["edge_count"] = 1
+    within_category_edges["ppmi"] = 0.5
+
+    return edges.append(within_category_edges)
+
+
 def make_edge_traces(G: nx.Graph):
     """
     Makes edge traces for plotting a network. Must make a separate trace for each edge
@@ -98,24 +142,26 @@ def make_edge_traces(G: nx.Graph):
     edge_midpoint_text = []
 
     for edge in G.edges():
-        x0, y0 = G.nodes[edge[0]]["pos"]
-        x1, y1 = G.nodes[edge[1]]["pos"]
-        ppmi = G.edges[edge]["ppmi"]
-        edge_count = G.edges[edge]["edge_count"]
-        trace = go.Scatter(
-            x=[x0, x1, None],
-            y=[y0, y1, None],
-            line=dict(width=ppmi / 2, color="gray"),
-            mode="lines",
-            showlegend=False,
-        )
-        edge_traces.append(trace)
+        if G.edges[edge]["category_source"] != G.edges[edge]["category_target"]:
+            x0, y0 = G.nodes[edge[0]]["pos"]
+            x1, y1 = G.nodes[edge[1]]["pos"]
+            ppmi = G.edges[edge]["ppmi"]
+            width = max(ppmi, 0.25)
+            edge_count = G.edges[edge]["edge_count"]
+            trace = go.Scatter(
+                x=[x0, x1, None],
+                y=[y0, y1, None],
+                line=dict(width=width, color="gray"),
+                mode="lines",
+                showlegend=False,
+            )
+            edge_traces.append(trace)
 
-        edge_midpoint_x.append((x0 + x1) / 2)
-        edge_midpoint_y.append((y0 + y1) / 2)
-        edge_midpoint_text.append(
-            f"# connections = {edge_count}<br>ppmi = {round(ppmi, 2)}"
-        )
+            edge_midpoint_x.append((x0 + x1) / 2)
+            edge_midpoint_y.append((y0 + y1) / 2)
+            edge_midpoint_text.append(
+                f"# connections = {edge_count}<br>ppmi = {round(ppmi, 2)}"
+            )
 
     edge_midpoint_trace = go.Scatter(
         x=edge_midpoint_x,
@@ -129,51 +175,53 @@ def make_edge_traces(G: nx.Graph):
     return edge_traces, edge_midpoint_trace
 
 
-def make_node_trace(G: nx.Graph, node_type: NodeType, color: str):
-    node_x = []
-    node_y = []
-    node_size = []
-    node_name = []
-    hover_info = []
+def make_node_traces(G: nx.Graph):
+    node_traces = []
+    node_categories = list(set(nx.get_node_attributes(G, "category").values()))
 
-    def add_node(node):
+    def add_trace(node, category):
         x, y = G.nodes[node]["pos"]
         node_x.append(x)
         node_y.append(y)
         node_size.append(G.nodes[node]["count_log"] * 5)
         node_name.append(node)
-        hover_info.append(f"{node}<br>count = {G.nodes[node]['count']}")
+        hover_info.append(
+            f"{node}<br>count = {G.nodes[node]['count']}<br>category = {category}"
+        )
 
-    if node_type == NodeType.Effect:
+    for category in node_categories:
+
+        node_x = []
+        node_y = []
+        node_size = []
+        node_name = []
+        hover_info = []
+
         for node in G.nodes():
-            if G.nodes[node]["label"] == "EFFECT":
-                add_node(node)
+            if G.nodes[node]["category"] == category:
+                add_trace(node, category)
             else:
                 pass
-    elif node_type == NodeType.Remedy:
-        for node in G.nodes():
-            if G.nodes[node]["remedy_type"] == "Remedy":
-                add_node(node)
-            else:
-                pass
-    elif node_type == NodeType.Possible_Remedy:
-        for node in G.nodes():
-            if G.nodes[node]["remedy_type"] == "Possible Remedy":
-                add_node(node)
-            else:
-                pass
-    return go.Scatter(
-        x=node_x,
-        y=node_y,
-        mode="markers+text",
-        text=node_name,
-        customdata=hover_info,
-        hovertemplate="%{customdata}",
-        # hoverinfo=hover_info,
-        marker=dict(color=color, size=node_size, line_width=2, opacity=1),
-        name=str(node_type),
-        textposition="bottom center",
-    )
+
+        trace = go.Scatter(
+            x=node_x,
+            y=node_y,
+            mode="markers+text",
+            text=node_name,
+            customdata=hover_info,
+            hovertemplate="%{customdata}",
+            marker=dict(
+                color=color_assignments[category],
+                size=node_size,
+                line_width=2,
+                opacity=1,
+            ),
+            name=str(category),
+            textposition="bottom center",
+        )
+        node_traces.append(trace)
+
+    return node_traces
 
 
 if __name__ == "__main__":
@@ -181,22 +229,30 @@ if __name__ == "__main__":
     st.title("Withdrawal Remedy Explorer")
     col1, col2 = st.beta_columns([2, 3])
 
-    unique_remedies, unique_effects, nodes, edges = load_data()
+    substance_categories, effect_categories, nodes, edges = load_data()
+    color_assignments = assign_colors(nodes)
 
     with col1:
         filter_type = st.radio(
-            label="Filter by Remedy or Effect?", options=("Remedy", "Effect")
+            label="Filter by Substance or Effect?", options=("Substance", "Effect")
         )
-        if filter_type == "Remedy":
-            filter_node = st.selectbox(
-                label="Select Remedy",
-                options=unique_remedies,
+        if filter_type == "Substance":
+            filter_cat = st.selectbox(
+                label="Select Substance Category",
+                options=substance_categories,
             )
         elif filter_type == "Effect":
-            filter_node = st.selectbox(
-                label="Select Effect",
-                options=unique_effects,
+            filter_cat = st.selectbox(
+                label="Select Effect Category",
+                options=effect_categories,
             )
+        filtered_node_list = filter_on_category(
+            category=filter_cat, filter_type=filter_type, nodes=nodes
+        )
+        filter_node = st.selectbox(
+            label=f"Select {filter_type}",
+            options=filtered_node_list,
+        )
         filtered_nodes, filtered_edges = filter_on_node(
             filter_node=filter_node,
             filter_type=filter_type,
@@ -230,15 +286,16 @@ if __name__ == "__main__":
         )
 
     with col2:
+        combined_edgelist = add_within_category_edges(filtered_nodes, filtered_edges)
         G = nx.from_pandas_edgelist(
-            filtered_edges,
+            combined_edgelist,
             source="from",
             target="to",
             edge_attr=True,
         )
 
         # Set each column we'll use from nodes df as a node attribute
-        for col in ["block_level_0", "count", "label", "remedy_type", "count_log"]:
+        for col in ["id", "category", "count", "label", "count_log"]:
             nx.set_node_attributes(
                 G,
                 pd.Series(
@@ -253,13 +310,7 @@ if __name__ == "__main__":
 
         # Make traces for plotting
         edge_traces, edge_midpoint_trace = make_edge_traces(G)
-        effect_trace = make_node_trace(G=G, node_type=NodeType.Effect, color="coral")
-        remedy_trace = make_node_trace(
-            G=G, node_type=NodeType.Remedy, color="cornflowerblue"
-        )
-        possible_remedy_trace = make_node_trace(
-            G=G, node_type=NodeType.Possible_Remedy, color="lightgreen"
-        )
+        node_traces = make_node_traces(G)
 
         # Make the plotly figure
         fig = go.Figure(
@@ -274,11 +325,8 @@ if __name__ == "__main__":
         )
         for trace in edge_traces:
             fig.add_trace(trace)
-        for trace in [effect_trace, remedy_trace, possible_remedy_trace]:
-            if trace is not None:
-                fig.add_trace(trace)
-            else:
-                pass
+        for trace in node_traces:
+            fig.add_trace(trace)
         fig.add_trace(edge_midpoint_trace)
 
         st.plotly_chart(fig, use_container_width=True)
