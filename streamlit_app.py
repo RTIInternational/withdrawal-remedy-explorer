@@ -109,37 +109,6 @@ def get_table_download_link(df: pd.DataFrame, node: str):
     return href
 
 
-def make_grouped_layout(G: nx.Graph, filtered_nodes: pd.DataFrame, filter_node: str):
-    # start from a base layout
-    pos = nx.spring_layout(G)
-    keys = list(pos.keys())
-    values = list(pos.values())
-
-    # reorder keys by category
-
-    # prep center points (along circle perimeter) for the clusters
-    node_categories = list(set(nx.get_node_attributes(G, "category").values()))
-    angles = np.linspace(0, 2 * np.pi, 1 + len(node_categories))
-    reposition = {}
-    radius = 2.5
-    for category, angle in zip(node_categories, angles):
-        if angle > 0:
-            reposition[category] = np.array(
-                [radius * np.cos(angle), radius * np.sin(angle)]
-            )
-        else:
-            reposition[category] = np.array([0, 0])
-
-    # adjust each point to be relative to its category's center point
-    for node in pos.keys():
-        if G.nodes[node]["id"] == filter_node:
-            pass
-        category = G.nodes[node]["category"]
-        pos[node] += reposition[category]
-
-    return pos
-
-
 def add_within_category_edges(nodes: pd.DataFrame, edges: pd.DataFrame):
     # make edges among nodes of same category
     self_join = nodes.merge(nodes, on="category")
@@ -336,7 +305,6 @@ if __name__ == "__main__":
             )
 
         # Lay out the network and add node position as a node attribute
-        # pos = make_grouped_layout(G, filter_node)
         pos = nx.drawing.layout.spring_layout(G)
         nx.set_node_attributes(G, pos, name="pos")
 
