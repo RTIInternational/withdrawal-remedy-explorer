@@ -233,18 +233,80 @@ if __name__ == "__main__":
     color_assignments = assign_colors(nodes)
 
     with col1:
+        readme = st.beta_expander("README")
+        with readme:
+            st.markdown(
+                """
+                Withdrawal Remedy Explorer lets you explore the ways people manage opioid withdrawal
+                symptoms. 
+
+                The data come from Reddit - [r/opiates](https://www.reddit.com/r/opiates/) and [r/OpiatesRecovery](https://www.reddit.com/r/OpiatesRecovery/) - where people
+                discuss a variety of opioid-related topics. From the data, unique *substances* and *effects*
+                were identified. Connections were drawn when a *substance* and *effect* were mentioned in
+                the same sentence. A forthcoming paper will discuss our methodology in detail.
+
+                #### Overview
+                Withdrawal Remedy Explorer shows you all of the *subtances/effects* connected to
+                a single *substance/effect* which you choose.
+
+                You can use the category dropdown to narrow down to the type of *substance* or 
+                *effect* you're interested in.
+
+                PPMI and Edge Count sliders let you filter the results so you can hone in on a certain
+                type of connection. For example, you might choose to filter for a relatively high 
+                PPMI *and* edge count to only view connections which are both noteworthy and frequently 
+                mentioned.
+
+                Hover on the (?) icon next to each input for additional info.
+
+                #### Filtering by Substance
+                If you filter by substance, you can view all of the effects connected to a single
+                substance. For example, you can filter to "heroin" and see all the effects people
+                mention when they talk about heroin. 
+
+                This is a good place to start if you're interested in a particular substance.
+                For example, pharmaceutical manufacturers may be interested in the ways a certain
+                drug is being used to manage opioid withdrawal symptoms.
+
+                #### Filtering by Effect
+                If you filter by effect, you can view all of the substances connected to a single
+                effect. For example, you can filter to "insomnia" and see all the substances people
+                mention when they talk about insomnia. 
+
+                This is a good place to start if you're interested in a particular withdrawal
+                symptom. For example, psychiatrists may be interested in the various substances
+                people use to manage a particular withdrawal symptom.
+
+                #### Notes/Limitations
+                - Despite the title, *effects* are not limited to withdrawal symptoms, and *substances*
+                are not limited to remedies. Although those are our primary interest, we include 
+                all substances and effects present in the Reddit data.
+
+                - Connections between a substance and effect do not necessarily imply that the
+                substance was used to treat the effect. Connections could also mean that the substance
+                caused the effect, or they could be mentioned in a sentence together for another reason.
+                Future work will disentangle these connection types.
+
+                - Connections do not imply that the substance was effective at treating an effect.
+                **This tool in no way intends to give medical advice.**
+                """
+            )
         filter_type = st.radio(
-            label="Filter by Substance or Effect?", options=("Substance", "Effect")
+            label="Filter by Substance or Effect?",
+            options=("Substance", "Effect"),
+            help="If you choose substance, you can view all the effects connected to a single substance. If you choose effect, you can view all the substances connected to a single effect.",
         )
         if filter_type == "Substance":
             filter_cat = st.selectbox(
                 label="Select Substance Category",
                 options=substance_categories,
+                help="Substances are grouped into categories by their pharmacological profile and use in clinical practice. When you select a category, the list below will show substances in that category.",
             )
         elif filter_type == "Effect":
             filter_cat = st.selectbox(
                 label="Select Effect Category",
                 options=effect_categories,
+                help="Effects are grouped into categories by their relationship to opioid use. When you select a category, the list below will show effects in that category.",
             )
         filtered_node_list = filter_on_category(
             category=filter_cat, filter_type=filter_type, nodes=nodes
@@ -252,6 +314,7 @@ if __name__ == "__main__":
         filter_node = st.selectbox(
             label=f"Select {filter_type}",
             options=filtered_node_list,
+            help="Choose a substance/effect from the category selected above. If you don't see the substance/effect you're looking for, try a different category.",
         )
         filtered_nodes, filtered_edges = filter_on_node(
             filter_node=filter_node,
@@ -267,12 +330,14 @@ if __name__ == "__main__":
             min_value=0.0,
             max_value=PPMI_MAX,
             value=(0.0, PPMI_MAX),
+            help="PPMI is Positive Pointwise Mutual Information, a measure of strength of association. PPMI is high when the probability of a substance and effect co-ocurring is high relative to their individual probabilities of occurrence. Connections with high PPMI are noteworthy, but not necessarily common.",
         )
         edge_count_range = st.slider(
             label="Select edge count range to include",
             min_value=0,
             max_value=EDGE_COUNT_MAX,
             value=(0, EDGE_COUNT_MAX),
+            help="Edge Count is the number of times a substance and effect were mentioned together. Connections with high edge count are frequently mentioned, but not necessarily noteworthy, since the edge count depends on how often the individual substances and effects were mentioned.",
         )
         filtered_nodes, filtered_edges = filter_on_edge_weights(
             ppmi_range=ppmi_range,
@@ -330,3 +395,7 @@ if __name__ == "__main__":
         fig.add_trace(edge_midpoint_trace)
 
         st.plotly_chart(fig, use_container_width=True)
+
+        st.markdown(
+            "Copyright 2021 [RTI International](https://www.rti.org/). Withdrawal Remedy Explorer is an open source project. The code base is on [GitHub](https://github.com/RTIInternational/withdrawal-remedy-explorer)."
+        )
