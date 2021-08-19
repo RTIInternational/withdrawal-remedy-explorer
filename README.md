@@ -4,7 +4,7 @@ This repo contains the files needed to deploy the [Withdrawal Remedy Explorer ap
 
 ## Contents
 
-- **prepare_data.py** was used to filter and transform the source data, `edges_with_blocks.xlsx`, and generate the parquet files in `data/`. This allows the app to read a few small parquet files instead of the large Excel file, improving startup speed.
+- **prepare_data.py** was used to filter and transform the source data, `edges.parquet` and `nodes.parquet`, and generate the files read by the app: `remedy_edges.parquet`, `source_nodes.parquet`, and `target_nodes.parquet`.
 
 - **streamlit_app.py** runs the app. 
 
