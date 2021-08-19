@@ -15,5 +15,5 @@ General users of the Withdrawal Remedy Explorer app should use the app [on Strea
 For app developers, here are some instructions to get started.
 
 - To run the app locally, create a new Python virtual environment and install the dependencies with `pip install -r requirements.txt`. Then run `streamlit run streamlit_app.py`. 
-- To update the source data, replace `edges_with_blocks.xlsx` and run `python prepare_data.py`. Note that the data must be in the same format as the current version of `edges_with_blocks.xlsx`.
+- To update the source data, replace `edges.parquet` and `nodes.parquet` and run `python prepare_data.py`. Note that the data must be in the same format as the current version of `edges.parquet` and `nodes.parquet`. For more information on how to update these files, contact the maintainers.
 - This repo only contains the files necessary to run the app. The rest of the files and data associated with this project are stored in a separate, private repo. If you think you need access to those, contact the maintainers. 
