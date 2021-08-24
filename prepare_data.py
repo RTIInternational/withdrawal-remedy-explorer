@@ -35,6 +35,10 @@ def load_data():
     # transitioned to using the vanilla edge and node data, so some additional data
     # processing is necessary.
 
+    # Filter out nodes with fewer than 5 occurrences and edges connecting to those nodes
+    nodes = nodes.query("count >= 5").copy()
+    edges = edges.query("source in @nodes['index'] and target in @nodes['index']")
+
     edges["edge_count"] = edges["count"]
     edges.drop(columns=["count"], inplace=True)
     edges = edges.merge(nodes, how="inner", left_on="source", right_on="index")
