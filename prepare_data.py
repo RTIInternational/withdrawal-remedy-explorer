@@ -37,6 +37,13 @@ def load_data():
 
     # Filter out nodes with fewer than 5 occurrences and edges connecting to those nodes
     nodes = nodes.query("count >= 5").copy()
+
+    # Filter out mislabeled nodes
+    nodes = nodes[~nodes.category.isna()]
+    nodes = nodes[~nodes.node.eq("other")]
+    nodes = nodes[~nodes.node.eq("catnip")]
+
+    # Filter out edges to nodes that were removed in the above operations
     edges = edges.query("source in @nodes['index'] and target in @nodes['index']")
 
     edges["edge_count"] = edges["count"]
