@@ -30,6 +30,19 @@ def load_data():
     edges = pd.read_parquet("data/edges.parquet")
     nodes = pd.read_parquet("data/nodes.parquet")
 
+    # Fix mislabeling and format labels
+    nodes.loc[nodes.node.eq('insomnia'), 'category'] = 'DSM 5 symptom of opioid withdrawal'
+    nodes.category = np.where(
+        nodes.category == 'Not a symptom of opiod use or withdrawal', 
+        'Not a DSM-5 symptom of opiod use or withdrawal', 
+        nodes.category
+    )
+    nodes.category = np.where(
+        nodes.category == 'DSM 5 symptom of opioid withdrawal', 
+        'DSM-5 symptom of opioid withdrawal', 
+        nodes.category
+    )
+    
     # This section transforms the input data into the format of the old
     # edges_with_blocks.xlsx, which we used to use as input data for the app. Now we've
     # transitioned to using the vanilla edge and node data, so some additional data
