@@ -2,7 +2,6 @@ import networkx as nx
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
-import numpy as np
 import streamlit as st
 import base64
 
@@ -20,7 +19,7 @@ class NodeType(IntEnum):
         return self.name.replace("_", " ")
 
 
-@st.cache
+@st.cache_data
 def load_data():
     remedy_edges = pd.read_parquet("data/remedy_edges.parquet")
     source_nodes = pd.read_parquet("data/source_nodes.parquet")
@@ -29,13 +28,13 @@ def load_data():
     substance_categories = source_nodes.category.unique().tolist()
     effect_categories = target_nodes.category.unique().tolist()
 
-    nodes = source_nodes.append(target_nodes).drop_duplicates()
+    nodes = pd.concat([source_nodes, target_nodes]).drop_duplicates()
     nodes.sort_values(by=["category"])
 
     return substance_categories, effect_categories, nodes, remedy_edges
 
 
-@st.cache
+@st.cache_data
 def assign_colors(nodes: pd.DataFrame):
     colors = px.colors.qualitative.Light24
     categories = nodes["category"].unique()
@@ -125,7 +124,7 @@ def add_within_category_edges(nodes: pd.DataFrame, edges: pd.DataFrame):
     within_category_edges["edge_count"] = 1
     within_category_edges["ppmi"] = 0.5
 
-    return edges.append(within_category_edges)
+    return pd.concat([edges, within_category_edges])
 
 
 def make_edge_traces(G: nx.Graph):
@@ -227,13 +226,13 @@ def make_node_traces(G: nx.Graph):
 if __name__ == "__main__":
     st.set_page_config(layout="wide")
     st.title("Withdrawal Remedy Explorer")
-    col1, col2 = st.beta_columns([2, 3])
+    col1, col2 = st.columns([2, 3])
 
     substance_categories, effect_categories, nodes, edges = load_data()
     color_assignments = assign_colors(nodes)
 
     with col1:
-        readme = st.beta_expander("README")
+        readme = st.expander("README")
         with readme:
             st.markdown(
                 """
