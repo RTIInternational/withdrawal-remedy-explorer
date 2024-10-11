@@ -14,6 +14,22 @@ General users of the Withdrawal Remedy Explorer app should use the app [on Strea
 
 For app developers, here are some instructions to get started.
 
-- To run the app locally, create a new Python virtual environment and install the dependencies with `pip install -r requirements.txt`. Then run `streamlit run streamlit_app.py`. 
-- To update the source data, replace `edges.parquet` and `nodes.parquet` and run `python prepare_data.py`. Note that the data must be in the same format as the current version of `edges.parquet` and `nodes.parquet`. For more information on how to update these files, contact the maintainers.
+### Dependency management
+
+This repo includes both `uv.lock` and `requirements.txt`. This is an unusual choice, motivated by the deployment on Streamlit Sharing (at the time of this decision, Streamlit did not have functionality to use `uv` for dependency management). 
+
+This provides two options for running the app locally:
+
+1. Create a virtual environment using `uv venv` and install the dependencies with `uv sync`.
+1. Create a Python virtual environment using your tool of choice and install the dependencies with `pip install -r requirements.txt`. 
+
+The big downside is keeping these files in sync. If you add dependencies using `uv add`, make sure to then run `uv export --format requirements-txt > requirements.txt`.
+
+### Running the app locally
+
+Run `streamlit run streamlit_app.py`. 
+
+### Updating input data
+
+- To update the input data, replace `edges.parquet` and `nodes.parquet` and run `python prepare_data.py`. Note that the data must be in the same format as the current version of `edges.parquet` and `nodes.parquet`. For more information on how to update these files, contact the maintainers.
 - This repo only contains the files necessary to run the app. The rest of the files and data associated with this project are stored in a separate, private repo. If you think you need access to those, contact the maintainers. 
